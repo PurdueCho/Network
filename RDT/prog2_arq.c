@@ -14,14 +14,14 @@ enum state
 /* Transport Layer */
 struct Transport
 {
-  enum state state;
-  int expect_seq_num;
-  struct pkt packet; // copy of a packet for possible retransmission
+  enum state state;               // store FSM state for sender
+  int expectedseqnum;             // store expectedseqnum
+  struct pkt packet;              // copy of a packet for possible retransmission
   float timer;
 };
 
-struct Transport sender;   // A
-struct Transport receiver; // B
+struct Transport sender;          // A
+struct Transport receiver;        // B
 // float time
 unsigned int msgcnt;
 
@@ -39,10 +39,10 @@ int getChkSum(struct pkt packet)
 }
 
 /* Make Packet */
-struct pkt make_sender_pkt(int expect_seq_num, struct msg message)
+struct pkt make_sender_pkt(int expectedseqnum, struct msg message)
 {
   struct pkt packet;
-  packet.seqnum = expect_seq_num;
+  packet.seqnum = expectedseqnum;
   memcpy(packet.payload, message.data, sizeof(message.data));
   packet.checksum = getChkSum(packet);
 
@@ -72,7 +72,7 @@ int A_output(struct msg message)
   }
   // Make packet to send
   struct pkt sndpkt;
-  sndpkt = make_sender_pkt(sender.expect_seq_num, message);
+  sndpkt = make_sender_pkt(sender.expectedseqnum, message);
 
   if (DEBUG) {
     printf("    Packet to send to B:\n");
@@ -105,17 +105,17 @@ int A_input(struct pkt packet)
 
   // Condition Check
   int checksum = getChkSum(packet);
-  if (packet.acknum == sender.expect_seq_num)
+  if (packet.acknum == sender.expectedseqnum)
   {
     printf("    A: ACK #%d received.\n", packet.acknum);
     stoptimer(A);
     sender.state = WAIT_CALL;
-    sender.expect_seq_num = 1 - sender.expect_seq_num; // 0 <-> 1
+    sender.expectedseqnum = 1 - sender.expectedseqnum; // 0 <-> 1
   }
-  else if (packet.acknum != sender.expect_seq_num)
+  else if (packet.acknum != sender.expectedseqnum)
   {
     if (DEBUG)
-      printf("    NAK: Expected: %d  Current: %d Dropped.\n", sender.expect_seq_num, packet.acknum);
+      printf("    NAK: Expected: %d  Current: %d Dropped.\n", sender.expectedseqnum, packet.acknum);
   }
   else if (packet.checksum != checksum)
   {
@@ -151,7 +151,7 @@ int A_timerinterrupt()
 int A_init()
 {
   msgcnt = 1;
-  sender.expect_seq_num = 0;
+  sender.expectedseqnum = 0;
   sender.state = WAIT_CALL;
   sender.timer = TIMER;
 
@@ -166,7 +166,7 @@ int B_input(struct pkt packet)
   if (DEBUG)
   {
     printf("\n  B_input:\n");
-    printf("    B's current expect seq num: %d\n", receiver.expect_seq_num);
+    printf("    B's current expect seq num: %d\n", receiver.expectedseqnum);
     printf("    Packet seq number: %d\n", packet.seqnum);
   }
 
@@ -180,17 +180,17 @@ int B_input(struct pkt packet)
         printf("    !!!: Duplicated packet detected. Send ACK.\n");
       }
     }
-    sndpkt = make_receiver_pkt(1 - receiver.expect_seq_num);
-  } else if (packet.seqnum != receiver.expect_seq_num && packet.seqnum == receiver.packet.seqnum) { // duplicated
+    sndpkt = make_receiver_pkt(1 - receiver.expectedseqnum);
+  } else if (packet.seqnum != receiver.expectedseqnum && packet.seqnum == receiver.packet.seqnum) { // duplicated
     if (DEBUG) printf("    NAK: Duplicated packet. Dropped.\n");
     sndpkt = make_receiver_pkt(receiver.packet.seqnum);
-  } else if (packet.seqnum != receiver.expect_seq_num && packet.seqnum != receiver.packet.seqnum) { // error
+  } else if (packet.seqnum != receiver.expectedseqnum && packet.seqnum != receiver.packet.seqnum) { // error
     if (DEBUG) printf("    NAK: Packet transmission Error. Dropped.\n");
-    sndpkt = make_receiver_pkt(1 - receiver.expect_seq_num);
+    sndpkt = make_receiver_pkt(1 - receiver.expectedseqnum);
   } else {
     printf("    B message received: %s\n", packet.payload);
-    sndpkt = make_receiver_pkt(receiver.expect_seq_num);
-    receiver.expect_seq_num = 1 - receiver.expect_seq_num; // 0 <-> 1
+    sndpkt = make_receiver_pkt(receiver.expectedseqnum);
+    receiver.expectedseqnum = 1 - receiver.expectedseqnum; // 0 <-> 1
     // Send to App layer
     receiver.packet = packet; // hold the last packet
     tolayer5(B, packet.payload);
@@ -199,7 +199,7 @@ int B_input(struct pkt packet)
   // Send B's packet
   if (DEBUG) {
     printf("    Send ACK #%d\n", sndpkt.acknum);
-    printf("    B's next expect seq num: %d\n", receiver.expect_seq_num);
+    printf("    B's next expect seq num: %d\n", receiver.expectedseqnum);
   }
 
   tolayer3(B, sndpkt);
@@ -222,7 +222,7 @@ int B_timerinterrupt() { return 0; }
 int B_init()
 {
 
-  receiver.expect_seq_num = 0;
+  receiver.expectedseqnum = 0;
 
   return 0;
 }
